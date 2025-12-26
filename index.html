@@ -8,100 +8,30 @@
 <style>
 :root{
   --roxo:#7c3aed;
-  --roxo-escuro:#4c1d95;
   --laranja:#f97316;
   --amarelo:#facc15;
-  --card:rgba(76,29,149,.85);
 }
-
 body{
   margin:0;
-  font-family:Arial, sans-serif;
-  min-height:100vh;
+  font-family:Arial;
   background:linear-gradient(135deg,var(--laranja),var(--amarelo));
+  color:#fff;
   display:flex;
   justify-content:center;
-  align-items:flex-start;
-  color:#fff;
 }
-
-#app{
-  width:100%;
-  max-width:1000px;
-  padding:20px;
-}
-
-h1{
-  text-align:center;
-  margin-bottom:20px;
-  background:linear-gradient(90deg,#fff,var(--roxo));
-  -webkit-background-clip:text;
-  -webkit-text-fill-color:transparent;
-}
-
+#app{max-width:900px;width:100%;padding:20px}
 .card{
-  background:var(--card);
+  background:rgba(76,29,149,.85);
   border-radius:14px;
   padding:15px;
   margin-bottom:15px;
-  box-shadow:0 10px 30px rgba(0,0,0,.25);
 }
-
+input,button{
+  width:100%;padding:12px;border:none;border-radius:10px;margin-bottom:10px
+}
+button{background:var(--roxo);color:#fff;font-weight:bold}
+video{width:100%;border-radius:14px;background:#000}
 .hidden{display:none}
-
-input{
-  width:100%;
-  padding:12px;
-  border-radius:10px;
-  border:none;
-  margin-bottom:10px;
-  font-size:15px;
-}
-
-button{
-  padding:12px;
-  border:none;
-  border-radius:10px;
-  cursor:pointer;
-  background:var(--roxo);
-  color:#fff;
-  font-weight:bold;
-  transition:.2s;
-}
-
-button:hover{
-  transform:scale(1.03);
-  filter:brightness(1.15);
-}
-
-button.red{background:#dc2626}
-button.gray{background:#555}
-
-video{
-  width:100%;
-  border-radius:14px;
-  background:#000;
-}
-
-#chat{
-  height:220px;
-  overflow:auto;
-  background:rgba(0,0,0,.25);
-  border-radius:10px;
-  padding:10px;
-  margin-bottom:10px;
-}
-
-.msg{margin-bottom:6px}
-.system{color:#fde68a;font-style:italic}
-.user{color:#c4b5fd;font-weight:bold}
-
-#users div{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  margin-bottom:6px;
-}
 </style>
 </head>
 
@@ -112,53 +42,93 @@ video{
 
 <div id="login" class="card">
   <input id="username" placeholder="Seu nome">
-  <button onclick="join()">Entrar na sala</button>
+  <button onclick="join()">Entrar</button>
 </div>
 
-<div id="room" class="hidden">
+<div id="roomUI" class="hidden">
 
-  <div class="card">
-    <video id="video" autoplay playsinline></video>
-  </div>
+<div class="card">
+  <video id="video" autoplay playsinline muted></video>
 
-  <div id="hostControls" class="card hidden">
-    <button onclick="startLive()">🎥 Iniciar transmissão</button>
-    <button class="red" onclick="stopLive()">⛔ Encerrar transmissão</button>
-  </div>
-
-  <div id="users" class="card"></div>
-
-  <div id="chat" class="card"></div>
-
-  <div class="card">
-    <input id="msg" placeholder="Digite sua mensagem">
-    <button onclick="sendMsg()">Enviar</button>
-  </div>
-
+  <label>🔊 Volume</label>
+  <input type="range" min="0" max="1" step="0.01"
+         onchange="video.volume=this.value">
 </div>
 
+<div id="hostUI" class="card hidden">
+  <button onclick="startLive()">🎥 Iniciar transmissão</button>
+  <button onclick="toggleMic()">🎙️ Ligar / Desligar microfone</button>
+  <button onclick="stopLive()">⛔ Encerrar transmissão</button>
+</div>
+
+</div>
 </div>
 
 <script>
-const WORKER_URL = "https://pagomeia-live.thierrylucazz.workers.dev/";
+const WS_URL = "https://pagomeia-live.thierrylucazz.workers.dev/";
 
-let ws,isHost=false,pc,stream,users=[];
+const params = new URLSearchParams(window.location.search);
+const ROOM = params.get("room");
+const HOST_KEY = params.get("host"); // só host tem isso
+
+let ws,isHost=false,pc,screenStream,micStream,micSender;
 
 function join(){
-  const name=username.value.trim();
-  if(!name)return;
-  ws=new WebSocket(WORKER_URL);
+  ws = new WebSocket(WS_URL);
 
-  ws.onopen=()=>{
-    ws.send(JSON.stringify({type:"join",user:name}));
+  ws.onopen = ()=>{
+    ws.send(JSON.stringify({
+      type:"join",
+      room:ROOM,
+      user:username.value,
+      hostKey:HOST_KEY || null
+    }));
+
     login.classList.add("hidden");
-    room.classList.remove("hidden");
+    roomUI.classList.remove("hidden");
   };
 
-  ws.onmessage=e=>{
-    const d=JSON.parse(e.data);
+  ws.onmessage = e=>{
+    const d = JSON.parse(e.data);
 
-    if(d.type==="host"){
+    if(d.type==="host-approved"){
       isHost=true;
-      hostControls.classList.remove("hidden");
-      logSystem("Você é o ho
+      hostUI.classList.remove("hidden");
+    }
+
+    if(d.type==="offer"){
+      pc=createPC();
+      pc.setRemoteDescription(d.offer);
+      pc.createAnswer().then(a=>{
+        pc.setLocalDescription(a);
+        ws.send(JSON.stringify({type:"answer",answer:a}));
+      });
+    }
+
+    if(d.type==="answer") pc.setRemoteDescription(d.answer);
+    if(d.type==="candidate") pc.addIceCandidate(d.candidate);
+  };
+}
+
+function startLive(){
+  if(!isHost) return;
+
+  navigator.mediaDevices.getDisplayMedia({video:true,audio:true}).then(s=>{
+    screenStream=s;
+    video.srcObject=s;
+
+    pc=createPC();
+    s.getTracks().forEach(t=>pc.addTrack(t,s));
+
+    pc.createOffer().then(o=>{
+      pc.setLocalDescription(o);
+      ws.send(JSON.stringify({type:"offer",offer:o}));
+    });
+  });
+}
+
+function toggleMic(){
+  if(!isHost || !pc) return;
+
+  if(!micStream){
+    navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{
