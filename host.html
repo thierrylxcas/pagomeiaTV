@@ -46,6 +46,7 @@ button{
 const WS_URL = "wss://pagomeia-live.thierrylucazz.workers.dev/";
 let ws;
 let roomPassword = "";
+let heartbeat;
 
 document.getElementById("enter").onclick = () => {
   const hostPass = prompt("Senha do host:");
@@ -58,10 +59,8 @@ document.getElementById("enter").onclick = () => {
   ws = new WebSocket(WS_URL);
 
   ws.onopen = () => {
-    ws.send(JSON.stringify({
-      type: "room-open",
-      password: roomPassword
-    }));
+    sendRoomOpen();
+    heartbeat = setInterval(sendRoomOpen, 2000);
     log("🔴 Sala aberta");
     document.getElementById("end").hidden = false;
   };
@@ -77,7 +76,15 @@ document.getElementById("enter").onclick = () => {
   };
 };
 
+function sendRoomOpen(){
+  ws.send(JSON.stringify({
+    type: "room-open",
+    password: roomPassword
+  }));
+}
+
 document.getElementById("end").onclick = () => {
+  clearInterval(heartbeat);
   ws.send(JSON.stringify({ type: "room-close" }));
   ws.close();
   location.reload();
