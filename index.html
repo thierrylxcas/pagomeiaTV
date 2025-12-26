@@ -30,13 +30,17 @@ body{
 .card{
   background:var(--card);
   width:100%;
-  max-width:460px;
+  max-width:420px;
   padding:24px;
   border-radius:18px;
   box-shadow:0 20px 40px rgba(0,0,0,.4);
 }
 
-h1{text-align:center;color:var(--accent2)}
+h1{
+  text-align:center;
+  margin-bottom:20px;
+  color:var(--accent2);
+}
 
 button{
   width:100%;
@@ -51,7 +55,6 @@ button{
 
 .host{background:var(--accent);color:#fff}
 .guest{background:#2dd4bf;color:#000}
-.danger{background:#ef4444;color:#fff}
 
 input{
   width:100%;
@@ -63,38 +66,18 @@ input{
 
 .hidden{display:none}
 
-video{
+#jitsi{
   width:100%;
-  background:#000;
-  margin-top:12px;
+  height:70vh;
   border-radius:14px;
+  overflow:hidden;
 }
-
-#chat{
-  margin-top:14px;
-  height:160px;
-  overflow-y:auto;
-  background:#0b0820;
-  border-radius:10px;
-  padding:10px;
-}
-
-.msg{margin-bottom:6px}
-
-.controls{
-  display:flex;
-  gap:10px;
-  margin-top:10px;
-}
-.controls button{flex:1}
 </style>
 </head>
 
 <body>
 
-<div class="card">
-
-<div id="login">
+<div class="card" id="login">
   <h1>PagoMeia Live</h1>
   <button class="host" onclick="selectRole('host')">Entrar como Host</button>
   <button class="guest" onclick="selectRole('guest')">Entrar como Convidado</button>
@@ -102,111 +85,68 @@ video{
   <button onclick="enter()">Entrar</button>
 </div>
 
-<div id="room" class="hidden">
-  <video id="video" autoplay playsinline controls></video>
-
-  <div class="controls" id="hostControls">
-    <button class="host" onclick="startStream()">Iniciar Transmissão</button>
-    <button class="danger" onclick="endStream()">Encerrar</button>
-  </div>
-
-  <div id="chat"></div>
-
-  <div class="controls">
-    <input id="msg" placeholder="Mensagem">
-    <button onclick="sendChat()">Enviar</button>
-  </div>
-</div>
-
+<div class="card hidden" id="room">
+  <div id="jitsi"></div>
 </div>
 
 <script>
-const WS_URL = "wss://pagomeia-live.thierrylucazz.workers.dev/";
-let role, ws, pc, stream, lastOffer;
+let role = null;
 
 function selectRole(r){
-  role=r;
-  alert("Modo: "+r);
+  role = r;
+  alert("Modo selecionado: " + (r === "host" ? "Host" : "Convidado"));
 }
 
 function enter(){
-  const p=password.value;
-  if(role==="host" && p!=="PagoMeia!123") return alert("Senha host errada");
-  if(role==="guest" && p!=="convidadopm26") return alert("Senha convidado errada");
+  const pass = document.getElementById("password").value;
 
-  login.classList.add("hidden");
-  room.classList.remove("hidden");
-  if(role!=="host") hostControls.style.display="none";
-
-  ws=new WebSocket(WS_URL);
-  ws.onopen=()=>{ if(role==="guest") ws.send(JSON.stringify({type:"join"})); };
-  ws.onmessage=handleMsg;
-}
-
-function handleMsg(e){
-  const d=JSON.parse(e.data);
-
-  if(d.type==="chat") addMsg(d.user,d.text);
-
-  if(d.type==="join" && role==="host" && lastOffer){
-    ws.send(JSON.stringify({type:"offer",offer:lastOffer}));
+  if(role === "host" && pass !== "PagoMeia!123"){
+    alert("Senha de host incorreta");
+    return;
   }
 
-  if(d.type==="offer" && role==="guest") handleOffer(d.offer);
-  if(d.type==="answer" && role==="host") pc.setRemoteDescription(d.answer);
-  if(d.type==="ice" && pc) pc.addIceCandidate(d.candidate);
+  if(role === "guest" && pass !== "convidadopm26"){
+    alert("Senha de convidado incorreta");
+    return;
+  }
+
+  document.getElementById("login").classList.add("hidden");
+  document.getElementById("room").classList.remove("hidden");
+
+  loadJitsi();
 }
 
-function send(data){ ws.send(JSON.stringify(data)); }
+function loadJitsi(){
+  const script = document.createElement("script");
+  script.src = "https://meet.jit.si/external_api.js";
+  script.onload = () => {
+    const domain = "meet.jit.si";
+    const options = {
+      roomName: "PagoMeiaTV",
+      parentNode: document.getElementById("jitsi"),
+      width: "100%",
+      height: "100%",
+      userInfo: {
+        displayName: role === "host" ? "PagoMeia Host" : "Convidado"
+      },
+      configOverwrite: {
+        startWithAudioMuted: false,
+        startWithVideoMuted: false,
+        prejoinPageEnabled: false
+      },
+      interfaceConfigOverwrite: {
+        SHOW_JITSI_WATERMARK: false,
+        SHOW_WATERMARK_FOR_GUESTS: false
+      }
+    };
 
-function sendChat(){
-  if(!msg.value) return;
-  send({type:"chat",user:role,text:msg.value});
-  msg.value="";
-}
+    const api = new JitsiMeetExternalAPI(domain, options);
 
-function addMsg(u,t){
-  const d=document.createElement("div");
-  d.className="msg";
-  d.innerHTML=`<b>${u}:</b> ${t}`;
-  chat.appendChild(d);
-  chat.scrollTop=chat.scrollHeight;
-}
-
-async function startStream(){
-  stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
-  video.srcObject=stream;
-
-  pc=new RTCPeerConnection();
-  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
-
-  pc.onicecandidate=e=>{
-    if(e.candidate) send({type:"ice",candidate:e.candidate});
+    if(role === "host"){
+      api.executeCommand("toggleShareScreen");
+    }
   };
-
-  lastOffer=await pc.createOffer();
-  await pc.setLocalDescription(lastOffer);
-  send({type:"offer",offer:lastOffer});
-}
-
-async function handleOffer(offer){
-  pc=new RTCPeerConnection();
-
-  pc.ontrack=e=>{ video.srcObject=e.streams[0]; };
-
-  pc.onicecandidate=e=>{
-    if(e.candidate) send({type:"ice",candidate:e.candidate});
-  };
-
-  await pc.setRemoteDescription(offer);
-  const answer=await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-  send({type:"answer",answer});
-}
-
-function endStream(){
-  if(stream) stream.getTracks().forEach(t=>t.stop());
-  location.reload();
+  document.body.appendChild(script);
 }
 </script>
 
