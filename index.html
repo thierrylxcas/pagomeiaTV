@@ -3,99 +3,207 @@
 <head>
 <meta charset="UTF-8">
 <title>PagoMeia Live</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <style>
+:root{
+  --bg:#0f0c1a;
+  --card:#1a1630;
+  --accent:#8b5cf6;
+  --accent2:#f59e0b;
+  --text:#ffffff;
+}
+
+*{box-sizing:border-box}
+
 body{
-  background:#1a1a1a;
-  color:#fff;
-  font-family:Arial;
+  margin:0;
+  font-family:Arial, Helvetica, sans-serif;
+  background:radial-gradient(circle at top,#1f1b3a,#0f0c1a);
+  color:var(--text);
   display:flex;
-  flex-direction:column;
+  justify-content:center;
   align-items:center;
-  padding:20px;
+  min-height:100vh;
 }
-input,button{
-  padding:10px;
-  margin:5px;
-  border-radius:8px;
-  border:none;
+
+.card{
+  background:var(--card);
+  width:100%;
+  max-width:420px;
+  padding:24px;
+  border-radius:18px;
+  box-shadow:0 20px 40px rgba(0,0,0,.4);
 }
+
+h1{
+  text-align:center;
+  margin-bottom:20px;
+  color:var(--accent2);
+}
+
 button{
-  background:#7c3aed;
-  color:#fff;
+  width:100%;
+  padding:14px;
+  margin-top:10px;
+  border:none;
+  border-radius:12px;
+  font-size:16px;
+  cursor:pointer;
+  font-weight:bold;
 }
+
+.host{background:var(--accent);color:#fff}
+.guest{background:#2dd4bf;color:#000}
+.danger{background:#ef4444;color:#fff}
+
+input{
+  width:100%;
+  padding:12px;
+  border-radius:10px;
+  border:none;
+  margin-top:10px;
+}
+
+.hidden{display:none}
+
+#video{
+  width:100%;
+  border-radius:14px;
+  background:#000;
+  margin-top:12px;
+}
+
 #chat{
-  width:80%;
-  height:200px;
-  background:#111;
-  border-radius:8px;
+  margin-top:14px;
+  height:180px;
+  overflow-y:auto;
+  background:#0b0820;
+  border-radius:10px;
   padding:10px;
-  overflow:auto;
+  font-size:14px;
 }
+
+.msg{
+  margin-bottom:6px;
+}
+
+.controls{
+  display:flex;
+  gap:10px;
+  margin-top:10px;
+}
+
+.controls button{flex:1}
 </style>
 </head>
+
 <body>
 
-<h2>PagoMeia Live</h2>
+<div class="card">
 
-<input id="name" placeholder="Seu nome">
-<input id="pass" placeholder="Senha da sala">
-<button id="join">Entrar</button>
+  <!-- LOGIN -->
+  <div id="login">
+    <h1>PagoMeia Live</h1>
+    <button class="host" onclick="selectRole('host')">Entrar como Host</button>
+    <button class="guest" onclick="selectRole('guest')">Entrar como Convidado</button>
+    <input id="password" placeholder="Senha">
+    <button onclick="enter()">Entrar</button>
+  </div>
 
-<div id="chat"></div>
+  <!-- SALA -->
+  <div id="room" class="hidden">
+    <video id="video" autoplay playsinline></video>
 
-<input id="msg" placeholder="Mensagem">
-<button id="send">Enviar</button>
+    <div class="controls" id="hostControls">
+      <button class="host" onclick="startStream()">Iniciar Transmissão</button>
+      <button class="danger" onclick="endStream()">Encerrar</button>
+    </div>
+
+    <div id="chat"></div>
+
+    <div class="controls">
+      <input id="msg" placeholder="Mensagem">
+      <button onclick="sendMsg()">Enviar</button>
+    </div>
+  </div>
+
+</div>
 
 <script>
 const WS_URL = "wss://pagomeia-live.thierrylucazz.workers.dev/";
-let ws;
-let allowed = false;
 
-document.getElementById("join").onclick = () => {
+let role = null;
+let ws = null;
+let stream = null;
+
+function selectRole(r){
+  role = r;
+  alert("Modo: " + (r === "host" ? "Host" : "Convidado"));
+}
+
+function enter(){
+  const pass = document.getElementById("password").value;
+
+  if(role === "host" && pass !== "PagoMeia!123") return alert("Senha de host incorreta");
+  if(role === "guest" && pass !== "convidadopm26") return alert("Senha de convidado incorreta");
+
+  document.getElementById("login").classList.add("hidden");
+  document.getElementById("room").classList.remove("hidden");
+
+  if(role !== "host") document.getElementById("hostControls").style.display="none";
+
+  connectWS();
+}
+
+function connectWS(){
   ws = new WebSocket(WS_URL);
 
   ws.onmessage = e => {
-    const m = JSON.parse(e.data);
+    const data = JSON.parse(e.data);
 
-    if (m.type === "room-open" && !allowed) {
-      if (pass.value === m.password) {
-        allowed = true;
-        ws.send(JSON.stringify({
-          type: "user-join",
-          user: name.value
-        }));
-        log("✅ Conectado à sala");
-      }
-    }
-
-    if (m.type === "room-close") {
-      alert("Sala encerrada pelo host");
-      location.reload();
-    }
-
-    if (m.type === "chat" && allowed) {
-      log(`<b>${m.user}:</b> ${m.text}`);
-    }
-
-    if (m.type === "user-join") {
-      log(`👤 ${m.user} entrou`);
+    if(data.type === "chat"){
+      addMsg(data.user, data.text);
     }
   };
-};
+}
 
-document.getElementById("send").onclick = () => {
-  if (!allowed) return alert("Sala offline");
+function sendMsg(){
+  const input = document.getElementById("msg");
+  if(!input.value) return;
+
   ws.send(JSON.stringify({
-    type: "chat",
-    user: name.value,
-    text: msg.value
+    type:"chat",
+    user: role,
+    text: input.value
   }));
-  msg.value = "";
-};
 
-function log(msg){
-  document.getElementById("chat").innerHTML += `<div>${msg}</div>`;
+  input.value="";
+}
+
+function addMsg(user,text){
+  const div = document.createElement("div");
+  div.className="msg";
+  div.innerHTML = `<b>${user}:</b> ${text}`;
+  document.getElementById("chat").appendChild(div);
+}
+
+async function startStream(){
+  stream = await navigator.mediaDevices.getDisplayMedia({
+    video:true,
+    audio:true
+  });
+  document.getElementById("video").srcObject = stream;
+}
+
+function endStream(){
+  if(stream){
+    stream.getTracks().forEach(t=>t.stop());
+    stream=null;
+  }
+  location.reload();
 }
 </script>
+
 </body>
 </html>
