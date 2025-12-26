@@ -13,6 +13,16 @@ body{
   align-items:center;
   padding:20px;
 }
+input,button{
+  padding:10px;
+  margin:5px;
+  border-radius:8px;
+  border:none;
+}
+button{
+  background:#7c3aed;
+  color:#fff;
+}
 #chat{
   width:80%;
   height:200px;
@@ -21,14 +31,6 @@ body{
   padding:10px;
   overflow:auto;
 }
-input,button{
-  margin:5px;
-  padding:8px;
-  border-radius:6px;
-  border:none;
-}
-button{ background:#7c3aed;color:#fff }
-video{ width:80%; margin-top:10px; border-radius:12px }
 </style>
 </head>
 <body>
@@ -40,44 +42,64 @@ video{ width:80%; margin-top:10px; border-radius:12px }
 <button id="join">Entrar</button>
 
 <div id="chat"></div>
+
 <input id="msg" placeholder="Mensagem">
 <button id="send">Enviar</button>
 
-<video id="video" autoplay></video>
-
 <script>
-const ROOM = "PagoMeiaTV";
-const WS_URL = "wss://pagomeia-live.thierrylucazz.workers.dev/?room=" + ROOM;
-
+const WS_URL = "wss://pagomeia-live.thierrylucazz.workers.dev/";
 let ws;
+let allowed = false;
 
 document.getElementById("join").onclick = () => {
   ws = new WebSocket(WS_URL);
 
   ws.onopen = () => {
-    ws.send(JSON.stringify({
-      type:"join",
-      username: name.value,
-      password: pass.value
-    }));
+    // nada ainda
   };
 
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
-    if(m.type==="denied") alert("Sala offline ou senha errada");
-    if(m.type==="chat") chat.innerHTML += `<div><b>${m.user}:</b> ${m.text}</div>`;
-    if(m.type==="user-join") chat.innerHTML += `<div>👤 ${m.user} entrou</div>`;
-    if(m.type==="room-ended") {
-      alert("Sala encerrada");
+
+    if (m.type === "room-open") {
+      if (pass.value === m.password) {
+        allowed = true;
+        ws.send(JSON.stringify({
+          type: "user-join",
+          user: name.value
+        }));
+        log("✅ Conectado à sala");
+      }
+    }
+
+    if (m.type === "room-close") {
+      alert("Sala encerrada pelo host");
       location.reload();
+    }
+
+    if (m.type === "chat" && allowed) {
+      log(`<b>${m.user}:</b> ${m.text}`);
+    }
+
+    if (m.type === "user-join") {
+      log(`👤 ${m.user} entrou`);
     }
   };
 };
 
-send.onclick = () => {
-  ws.send(JSON.stringify({type:"chat", text: msg.value}));
-  msg.value="";
+document.getElementById("send").onclick = () => {
+  if (!allowed) return alert("Sala offline");
+  ws.send(JSON.stringify({
+    type: "chat",
+    user: name.value,
+    text: msg.value
+  }));
+  msg.value = "";
 };
+
+function log(msg){
+  document.getElementById("chat").innerHTML += `<div>${msg}</div>`;
+}
 </script>
 </body>
 </html>
