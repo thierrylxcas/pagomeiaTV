@@ -30,17 +30,13 @@ body{
 .card{
   background:var(--card);
   width:100%;
-  max-width:440px;
+  max-width:460px;
   padding:24px;
   border-radius:18px;
   box-shadow:0 20px 40px rgba(0,0,0,.4);
 }
 
-h1{
-  text-align:center;
-  margin-bottom:20px;
-  color:var(--accent2);
-}
+h1{text-align:center;color:var(--accent2)}
 
 button{
   width:100%;
@@ -49,8 +45,8 @@ button{
   border:none;
   border-radius:12px;
   font-size:16px;
-  cursor:pointer;
   font-weight:bold;
+  cursor:pointer;
 }
 
 .host{background:var(--accent);color:#fff}
@@ -60,28 +56,27 @@ button{
 input{
   width:100%;
   padding:12px;
+  margin-top:10px;
   border-radius:10px;
   border:none;
-  margin-top:10px;
 }
 
 .hidden{display:none}
 
 video{
   width:100%;
-  border-radius:14px;
   background:#000;
   margin-top:12px;
+  border-radius:14px;
 }
 
 #chat{
   margin-top:14px;
-  height:180px;
+  height:160px;
   overflow-y:auto;
   background:#0b0820;
   border-radius:10px;
   padding:10px;
-  font-size:14px;
 }
 
 .msg{margin-bottom:6px}
@@ -119,7 +114,7 @@ video{
 
   <div class="controls">
     <input id="msg" placeholder="Mensagem">
-    <button onclick="sendMsg()">Enviar</button>
+    <button onclick="sendChat()">Enviar</button>
   </div>
 </div>
 
@@ -127,41 +122,46 @@ video{
 
 <script>
 const WS_URL = "wss://pagomeia-live.thierrylucazz.workers.dev/";
-let role=null, ws=null, pc=null, stream=null;
+let role, ws, pc, stream, lastOffer;
 
 function selectRole(r){
   role=r;
-  alert("Modo: " + (r==="host"?"Host":"Convidado"));
+  alert("Modo: "+r);
 }
 
 function enter(){
-  const p=document.getElementById("password").value;
-  if(role==="host" && p!=="PagoMeia!123") return alert("Senha host incorreta");
-  if(role==="guest" && p!=="convidadopm26") return alert("Senha convidado incorreta");
+  const p=password.value;
+  if(role==="host" && p!=="PagoMeia!123") return alert("Senha host errada");
+  if(role==="guest" && p!=="convidadopm26") return alert("Senha convidado errada");
 
   login.classList.add("hidden");
   room.classList.remove("hidden");
   if(role!=="host") hostControls.style.display="none";
-  connectWS();
+
+  ws=new WebSocket(WS_URL);
+  ws.onopen=()=>{ if(role==="guest") ws.send(JSON.stringify({type:"join"})); };
+  ws.onmessage=handleMsg;
 }
 
-function connectWS(){
-  ws=new WebSocket(WS_URL);
-  ws.onmessage=e=>{
-    const d=JSON.parse(e.data);
-    if(d.type==="chat") addMsg(d.user,d.text);
-    if(d.type==="offer" && role==="guest") handleOffer(d.offer);
-    if(d.type==="answer" && role==="host") pc.setRemoteDescription(d.answer);
-    if(d.type==="ice" && pc) pc.addIceCandidate(d.candidate);
-  };
+function handleMsg(e){
+  const d=JSON.parse(e.data);
+
+  if(d.type==="chat") addMsg(d.user,d.text);
+
+  if(d.type==="join" && role==="host" && lastOffer){
+    ws.send(JSON.stringify({type:"offer",offer:lastOffer}));
+  }
+
+  if(d.type==="offer" && role==="guest") handleOffer(d.offer);
+  if(d.type==="answer" && role==="host") pc.setRemoteDescription(d.answer);
+  if(d.type==="ice" && pc) pc.addIceCandidate(d.candidate);
 }
 
 function send(data){ ws.send(JSON.stringify(data)); }
 
-function sendMsg(){
-  const m=msg.value;
-  if(!m) return;
-  send({type:"chat",user:role,text:m});
+function sendChat(){
+  if(!msg.value) return;
+  send({type:"chat",user:role,text:msg.value});
   msg.value="";
 }
 
@@ -184,9 +184,9 @@ async function startStream(){
     if(e.candidate) send({type:"ice",candidate:e.candidate});
   };
 
-  const offer=await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  send({type:"offer",offer});
+  lastOffer=await pc.createOffer();
+  await pc.setLocalDescription(lastOffer);
+  send({type:"offer",offer:lastOffer});
 }
 
 async function handleOffer(offer){
