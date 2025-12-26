@@ -3,132 +3,81 @@
 <head>
 <meta charset="UTF-8">
 <title>PagoMeia Live</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <style>
-:root{
-  --roxo:#7c3aed;
-  --laranja:#f97316;
-  --amarelo:#facc15;
-}
 body{
-  margin:0;
-  font-family:Arial;
-  background:linear-gradient(135deg,var(--laranja),var(--amarelo));
+  background:#1a1a1a;
   color:#fff;
+  font-family:Arial;
   display:flex;
-  justify-content:center;
+  flex-direction:column;
+  align-items:center;
+  padding:20px;
 }
-#app{max-width:900px;width:100%;padding:20px}
-.card{
-  background:rgba(76,29,149,.85);
-  border-radius:14px;
-  padding:15px;
-  margin-bottom:15px;
+#chat{
+  width:80%;
+  height:200px;
+  background:#111;
+  border-radius:8px;
+  padding:10px;
+  overflow:auto;
 }
 input,button{
-  width:100%;padding:12px;border:none;border-radius:10px;margin-bottom:10px
+  margin:5px;
+  padding:8px;
+  border-radius:6px;
+  border:none;
 }
-button{background:var(--roxo);color:#fff;font-weight:bold}
-video{width:100%;border-radius:14px;background:#000}
-.hidden{display:none}
+button{ background:#7c3aed;color:#fff }
+video{ width:80%; margin-top:10px; border-radius:12px }
 </style>
 </head>
-
 <body>
-<div id="app">
 
-<h1>🎥 PagoMeia Live</h1>
+<h2>PagoMeia Live</h2>
 
-<div id="login" class="card">
-  <input id="username" placeholder="Seu nome">
-  <button onclick="join()">Entrar</button>
-</div>
+<input id="name" placeholder="Seu nome">
+<input id="pass" placeholder="Senha da sala">
+<button id="join">Entrar</button>
 
-<div id="roomUI" class="hidden">
+<div id="chat"></div>
+<input id="msg" placeholder="Mensagem">
+<button id="send">Enviar</button>
 
-<div class="card">
-  <video id="video" autoplay playsinline muted></video>
-
-  <label>🔊 Volume</label>
-  <input type="range" min="0" max="1" step="0.01"
-         onchange="video.volume=this.value">
-</div>
-
-<div id="hostUI" class="card hidden">
-  <button onclick="startLive()">🎥 Iniciar transmissão</button>
-  <button onclick="toggleMic()">🎙️ Ligar / Desligar microfone</button>
-  <button onclick="stopLive()">⛔ Encerrar transmissão</button>
-</div>
-
-</div>
-</div>
+<video id="video" autoplay></video>
 
 <script>
-const WS_URL = "https://pagomeia-live.thierrylucazz.workers.dev/";
+const ROOM = "PagoMeiaTV";
+const WS_URL = "wss://pagomeia-live.thierrylucazz.workers.dev/?room=" + ROOM;
 
-const params = new URLSearchParams(window.location.search);
-const ROOM = params.get("room");
-const HOST_KEY = params.get("host"); // só host tem isso
+let ws;
 
-let ws,isHost=false,pc,screenStream,micStream,micSender;
-
-function join(){
+document.getElementById("join").onclick = () => {
   ws = new WebSocket(WS_URL);
 
-  ws.onopen = ()=>{
+  ws.onopen = () => {
     ws.send(JSON.stringify({
       type:"join",
-      room:ROOM,
-      user:username.value,
-      hostKey:HOST_KEY || null
+      username: name.value,
+      password: pass.value
     }));
-
-    login.classList.add("hidden");
-    roomUI.classList.remove("hidden");
   };
 
-  ws.onmessage = e=>{
-    const d = JSON.parse(e.data);
-
-    if(d.type==="host-approved"){
-      isHost=true;
-      hostUI.classList.remove("hidden");
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if(m.type==="denied") alert("Sala offline ou senha errada");
+    if(m.type==="chat") chat.innerHTML += `<div><b>${m.user}:</b> ${m.text}</div>`;
+    if(m.type==="user-join") chat.innerHTML += `<div>👤 ${m.user} entrou</div>`;
+    if(m.type==="room-ended") {
+      alert("Sala encerrada");
+      location.reload();
     }
-
-    if(d.type==="offer"){
-      pc=createPC();
-      pc.setRemoteDescription(d.offer);
-      pc.createAnswer().then(a=>{
-        pc.setLocalDescription(a);
-        ws.send(JSON.stringify({type:"answer",answer:a}));
-      });
-    }
-
-    if(d.type==="answer") pc.setRemoteDescription(d.answer);
-    if(d.type==="candidate") pc.addIceCandidate(d.candidate);
   };
-}
+};
 
-function startLive(){
-  if(!isHost) return;
-
-  navigator.mediaDevices.getDisplayMedia({video:true,audio:true}).then(s=>{
-    screenStream=s;
-    video.srcObject=s;
-
-    pc=createPC();
-    s.getTracks().forEach(t=>pc.addTrack(t,s));
-
-    pc.createOffer().then(o=>{
-      pc.setLocalDescription(o);
-      ws.send(JSON.stringify({type:"offer",offer:o}));
-    });
-  });
-}
-
-function toggleMic(){
-  if(!isHost || !pc) return;
-
-  if(!micStream){
-    navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{
+send.onclick = () => {
+  ws.send(JSON.stringify({type:"chat", text: msg.value}));
+  msg.value="";
+};
+</script>
+</body>
+</html>
