@@ -30,7 +30,7 @@ body{
 .card{
   background:var(--card);
   width:100%;
-  max-width:420px;
+  max-width:440px;
   padding:24px;
   border-radius:18px;
   box-shadow:0 20px 40px rgba(0,0,0,.4);
@@ -67,7 +67,7 @@ input{
 
 .hidden{display:none}
 
-#video{
+video{
   width:100%;
   border-radius:14px;
   background:#000;
@@ -84,16 +84,13 @@ input{
   font-size:14px;
 }
 
-.msg{
-  margin-bottom:6px;
-}
+.msg{margin-bottom:6px}
 
 .controls{
   display:flex;
   gap:10px;
   margin-top:10px;
 }
-
 .controls button{flex:1}
 </style>
 </head>
@@ -102,105 +99,113 @@ input{
 
 <div class="card">
 
-  <!-- LOGIN -->
-  <div id="login">
-    <h1>PagoMeia Live</h1>
-    <button class="host" onclick="selectRole('host')">Entrar como Host</button>
-    <button class="guest" onclick="selectRole('guest')">Entrar como Convidado</button>
-    <input id="password" placeholder="Senha">
-    <button onclick="enter()">Entrar</button>
+<div id="login">
+  <h1>PagoMeia Live</h1>
+  <button class="host" onclick="selectRole('host')">Entrar como Host</button>
+  <button class="guest" onclick="selectRole('guest')">Entrar como Convidado</button>
+  <input id="password" placeholder="Senha">
+  <button onclick="enter()">Entrar</button>
+</div>
+
+<div id="room" class="hidden">
+  <video id="video" autoplay playsinline controls></video>
+
+  <div class="controls" id="hostControls">
+    <button class="host" onclick="startStream()">Iniciar Transmissão</button>
+    <button class="danger" onclick="endStream()">Encerrar</button>
   </div>
 
-  <!-- SALA -->
-  <div id="room" class="hidden">
-    <video id="video" autoplay playsinline></video>
+  <div id="chat"></div>
 
-    <div class="controls" id="hostControls">
-      <button class="host" onclick="startStream()">Iniciar Transmissão</button>
-      <button class="danger" onclick="endStream()">Encerrar</button>
-    </div>
-
-    <div id="chat"></div>
-
-    <div class="controls">
-      <input id="msg" placeholder="Mensagem">
-      <button onclick="sendMsg()">Enviar</button>
-    </div>
+  <div class="controls">
+    <input id="msg" placeholder="Mensagem">
+    <button onclick="sendMsg()">Enviar</button>
   </div>
+</div>
 
 </div>
 
 <script>
 const WS_URL = "wss://pagomeia-live.thierrylucazz.workers.dev/";
-
-let role = null;
-let ws = null;
-let stream = null;
+let role=null, ws=null, pc=null, stream=null;
 
 function selectRole(r){
-  role = r;
-  alert("Modo: " + (r === "host" ? "Host" : "Convidado"));
+  role=r;
+  alert("Modo: " + (r==="host"?"Host":"Convidado"));
 }
 
 function enter(){
-  const pass = document.getElementById("password").value;
+  const p=document.getElementById("password").value;
+  if(role==="host" && p!=="PagoMeia!123") return alert("Senha host incorreta");
+  if(role==="guest" && p!=="convidadopm26") return alert("Senha convidado incorreta");
 
-  if(role === "host" && pass !== "PagoMeia!123") return alert("Senha de host incorreta");
-  if(role === "guest" && pass !== "convidadopm26") return alert("Senha de convidado incorreta");
-
-  document.getElementById("login").classList.add("hidden");
-  document.getElementById("room").classList.remove("hidden");
-
-  if(role !== "host") document.getElementById("hostControls").style.display="none";
-
+  login.classList.add("hidden");
+  room.classList.remove("hidden");
+  if(role!=="host") hostControls.style.display="none";
   connectWS();
 }
 
 function connectWS(){
-  ws = new WebSocket(WS_URL);
-
-  ws.onmessage = e => {
-    const data = JSON.parse(e.data);
-
-    if(data.type === "chat"){
-      addMsg(data.user, data.text);
-    }
+  ws=new WebSocket(WS_URL);
+  ws.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if(d.type==="chat") addMsg(d.user,d.text);
+    if(d.type==="offer" && role==="guest") handleOffer(d.offer);
+    if(d.type==="answer" && role==="host") pc.setRemoteDescription(d.answer);
+    if(d.type==="ice" && pc) pc.addIceCandidate(d.candidate);
   };
 }
 
+function send(data){ ws.send(JSON.stringify(data)); }
+
 function sendMsg(){
-  const input = document.getElementById("msg");
-  if(!input.value) return;
-
-  ws.send(JSON.stringify({
-    type:"chat",
-    user: role,
-    text: input.value
-  }));
-
-  input.value="";
+  const m=msg.value;
+  if(!m) return;
+  send({type:"chat",user:role,text:m});
+  msg.value="";
 }
 
-function addMsg(user,text){
-  const div = document.createElement("div");
-  div.className="msg";
-  div.innerHTML = `<b>${user}:</b> ${text}`;
-  document.getElementById("chat").appendChild(div);
+function addMsg(u,t){
+  const d=document.createElement("div");
+  d.className="msg";
+  d.innerHTML=`<b>${u}:</b> ${t}`;
+  chat.appendChild(d);
+  chat.scrollTop=chat.scrollHeight;
 }
 
 async function startStream(){
-  stream = await navigator.mediaDevices.getDisplayMedia({
-    video:true,
-    audio:true
-  });
-  document.getElementById("video").srcObject = stream;
+  stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
+  video.srcObject=stream;
+
+  pc=new RTCPeerConnection();
+  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+
+  pc.onicecandidate=e=>{
+    if(e.candidate) send({type:"ice",candidate:e.candidate});
+  };
+
+  const offer=await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  send({type:"offer",offer});
+}
+
+async function handleOffer(offer){
+  pc=new RTCPeerConnection();
+
+  pc.ontrack=e=>{ video.srcObject=e.streams[0]; };
+
+  pc.onicecandidate=e=>{
+    if(e.candidate) send({type:"ice",candidate:e.candidate});
+  };
+
+  await pc.setRemoteDescription(offer);
+  const answer=await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  send({type:"answer",answer});
 }
 
 function endStream(){
-  if(stream){
-    stream.getTracks().forEach(t=>t.stop());
-    stream=null;
-  }
+  if(stream) stream.getTracks().forEach(t=>t.stop());
   location.reload();
 }
 </script>
