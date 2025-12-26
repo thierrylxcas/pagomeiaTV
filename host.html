@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>PagoMeia Live – HOST</title>
+<style>
+body{
+  background:#121212;
+  color:#fff;
+  font-family:Arial;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding:20px;
+}
+button{
+  background:#7c3aed;
+  border:none;
+  padding:10px 20px;
+  border-radius:8px;
+  color:#fff;
+  cursor:pointer;
+  margin:5px;
+}
+video{ width:80%; border-radius:12px; margin-top:10px }
+</style>
+</head>
+<body>
+
+<h1>PagoMeia Live – Host</h1>
+<button id="login">Entrar como Host</button>
+<button id="start" hidden>🎥 Iniciar Transmissão</button>
+<button id="end" hidden>🛑 Encerrar Sala</button>
+
+<video id="video" autoplay muted></video>
+
+<script>
+const ROOM = "PagoMeiaTV";
+const WS_URL = "wss://pagomeia-live.thierrylucazz.workers.dev/?room=" + ROOM;
+
+let ws, stream;
+
+document.getElementById("login").onclick = async () => {
+  const pass = prompt("Senha do Host:");
+  if(pass !== "PagoMeia!123") return alert("Senha errada");
+
+  const roomPass = prompt("Crie a senha da sala:");
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({
+      type:"host-auth",
+      secret:pass,
+      roomPassword:roomPass
+    }));
+  };
+
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if(msg.type==="host-ok"){
+      alert("Sala criada");
+      document.getElementById("start").hidden=false;
+      document.getElementById("end").hidden=false;
+    }
+  };
+};
+
+document.getElementById("start").onclick = async () => {
+  stream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
+  document.getElementById("video").srcObject = stream;
+};
+
+document.getElementById("end").onclick = () => {
+  ws.send(JSON.stringify({type:"end-room"}));
+  ws.close();
+  location.reload();
+};
+</script>
+</body>
+</html>
