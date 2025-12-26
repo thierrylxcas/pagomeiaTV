@@ -16,65 +16,76 @@ body{
 button{
   background:#7c3aed;
   border:none;
-  padding:10px 20px;
-  border-radius:8px;
+  padding:12px 20px;
+  border-radius:10px;
   color:#fff;
   cursor:pointer;
-  margin:5px;
+  margin:6px;
+  font-size:16px;
 }
-video{ width:80%; border-radius:12px; margin-top:10px }
+#chat{
+  width:80%;
+  height:200px;
+  background:#1a1a1a;
+  border-radius:8px;
+  padding:10px;
+  overflow:auto;
+}
 </style>
 </head>
 <body>
 
-<h1>PagoMeia Live – Host</h1>
-<button id="login">Entrar como Host</button>
-<button id="start" hidden>🎥 Iniciar Transmissão</button>
+<h1>PagoMeia Live – HOST</h1>
+
+<button id="enter">Criar Sala</button>
 <button id="end" hidden>🛑 Encerrar Sala</button>
 
-<video id="video" autoplay muted></video>
+<div id="chat"></div>
 
 <script>
-const ROOM = "PagoMeiaTV";
-const WS_URL = "wss://pagomeia-live.thierrylucazz.workers.dev/?room=" + ROOM;
+const WS_URL = "wss://pagomeia-live.thierrylucazz.workers.dev/";
+let ws;
+let roomPassword = "";
 
-let ws, stream;
+document.getElementById("enter").onclick = () => {
+  const hostPass = prompt("Senha do host:");
+  if (hostPass !== "PagoMeia!123") {
+    alert("Senha inválida");
+    return;
+  }
 
-document.getElementById("login").onclick = async () => {
-  const pass = prompt("Senha do Host:");
-  if(pass !== "PagoMeia!123") return alert("Senha errada");
-
-  const roomPass = prompt("Crie a senha da sala:");
+  roomPassword = prompt("Crie a senha da sala:");
   ws = new WebSocket(WS_URL);
 
   ws.onopen = () => {
     ws.send(JSON.stringify({
-      type:"host-auth",
-      secret:pass,
-      roomPassword:roomPass
+      type: "room-open",
+      password: roomPassword
     }));
+    log("🔴 Sala aberta");
+    document.getElementById("end").hidden = false;
   };
 
   ws.onmessage = e => {
-    const msg = JSON.parse(e.data);
-    if(msg.type==="host-ok"){
-      alert("Sala criada");
-      document.getElementById("start").hidden=false;
-      document.getElementById("end").hidden=false;
+    const m = JSON.parse(e.data);
+    if (m.type === "chat") {
+      log(`<b>${m.user}:</b> ${m.text}`);
+    }
+    if (m.type === "user-join") {
+      log(`👤 ${m.user} entrou`);
     }
   };
 };
 
-document.getElementById("start").onclick = async () => {
-  stream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
-  document.getElementById("video").srcObject = stream;
-};
-
 document.getElementById("end").onclick = () => {
-  ws.send(JSON.stringify({type:"end-room"}));
+  ws.send(JSON.stringify({ type: "room-close" }));
   ws.close();
   location.reload();
 };
+
+function log(msg){
+  document.getElementById("chat").innerHTML += `<div>${msg}</div>`;
+}
 </script>
 </body>
 </html>
