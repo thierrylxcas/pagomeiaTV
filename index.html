@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>PagoMeia Live</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+:root{
+  --roxo:#7c3aed;
+  --roxo-escuro:#4c1d95;
+  --laranja:#f97316;
+  --amarelo:#facc15;
+  --card:rgba(76,29,149,.85);
+}
+
+body{
+  margin:0;
+  font-family:Arial, sans-serif;
+  min-height:100vh;
+  background:linear-gradient(135deg,var(--laranja),var(--amarelo));
+  display:flex;
+  justify-content:center;
+  align-items:flex-start;
+  color:#fff;
+}
+
+#app{
+  width:100%;
+  max-width:1000px;
+  padding:20px;
+}
+
+h1{
+  text-align:center;
+  margin-bottom:20px;
+  background:linear-gradient(90deg,#fff,var(--roxo));
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+
+.card{
+  background:var(--card);
+  border-radius:14px;
+  padding:15px;
+  margin-bottom:15px;
+  box-shadow:0 10px 30px rgba(0,0,0,.25);
+}
+
+.hidden{display:none}
+
+input{
+  width:100%;
+  padding:12px;
+  border-radius:10px;
+  border:none;
+  margin-bottom:10px;
+  font-size:15px;
+}
+
+button{
+  padding:12px;
+  border:none;
+  border-radius:10px;
+  cursor:pointer;
+  background:var(--roxo);
+  color:#fff;
+  font-weight:bold;
+  transition:.2s;
+}
+
+button:hover{
+  transform:scale(1.03);
+  filter:brightness(1.15);
+}
+
+button.red{background:#dc2626}
+button.gray{background:#555}
+
+video{
+  width:100%;
+  border-radius:14px;
+  background:#000;
+}
+
+#chat{
+  height:220px;
+  overflow:auto;
+  background:rgba(0,0,0,.25);
+  border-radius:10px;
+  padding:10px;
+  margin-bottom:10px;
+}
+
+.msg{margin-bottom:6px}
+.system{color:#fde68a;font-style:italic}
+.user{color:#c4b5fd;font-weight:bold}
+
+#users div{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:6px;
+}
+</style>
+</head>
+
+<body>
+<div id="app">
+
+<h1>🎥 PagoMeia Live</h1>
+
+<div id="login" class="card">
+  <input id="username" placeholder="Seu nome">
+  <button onclick="join()">Entrar na sala</button>
+</div>
+
+<div id="room" class="hidden">
+
+  <div class="card">
+    <video id="video" autoplay playsinline></video>
+  </div>
+
+  <div id="hostControls" class="card hidden">
+    <button onclick="startLive()">🎥 Iniciar transmissão</button>
+    <button class="red" onclick="stopLive()">⛔ Encerrar transmissão</button>
+  </div>
+
+  <div id="users" class="card"></div>
+
+  <div id="chat" class="card"></div>
+
+  <div class="card">
+    <input id="msg" placeholder="Digite sua mensagem">
+    <button onclick="sendMsg()">Enviar</button>
+  </div>
+
+</div>
+
+</div>
+
+<script>
+const WORKER_URL = "https://pagomeia-live.thierrylucazz.workers.dev/";
+
+let ws,isHost=false,pc,stream,users=[];
+
+function join(){
+  const name=username.value.trim();
+  if(!name)return;
+  ws=new WebSocket(WORKER_URL);
+
+  ws.onopen=()=>{
+    ws.send(JSON.stringify({type:"join",user:name}));
+    login.classList.add("hidden");
+    room.classList.remove("hidden");
+  };
+
+  ws.onmessage=e=>{
+    const d=JSON.parse(e.data);
+
+    if(d.type==="host"){
+      isHost=true;
+      hostControls.classList.remove("hidden");
+      logSystem("Você é o ho
